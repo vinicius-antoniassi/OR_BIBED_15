@@ -147,9 +147,13 @@
                     // Show the result on screen for the sake of this test
                     const resultDiv = document.getElementById('payment-result');
                     resultDiv.style.display = 'block';
+                    
+                    // Added a light red background to make the error stand out
+                    resultDiv.style.backgroundColor = '#ffebee'; 
+                    
                     resultDiv.innerHTML = `
-                    <h3 style="color: green; margin-top:0;">Eoor!</h3>
-                    <code>${err}</code>
+                        <h3 style="color: red; margin-top:0;">Error!</h3>
+                        <pre style="margin: 0;"><code>${JSON.stringify(err, null, 2)}</code></pre>
                     `;
                 });
         }
