@@ -143,6 +143,14 @@
                 })
                 .catch(function(err) {
                     console.error("Payment Error or User Closed Sheet: ", err);
+
+                    // Show the result on screen for the sake of this test
+                    const resultDiv = document.getElementById('payment-result');
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `
+                    <h3 style="color: green; margin-top:0;">Eoor!</h3>
+                    <code>${err}</code>
+                    `;
                 });
         }
 
