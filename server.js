@@ -6,6 +6,7 @@ const port = 3000;
 app.use((req, res, next) => {
     // Change 'same-origin' to 'unsafe-none' later to see the difference
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
     next();
 });
 
