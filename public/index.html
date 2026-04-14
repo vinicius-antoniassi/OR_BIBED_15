@@ -1,59 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Google Pay Integration (Test Mode)</title>
     <style>
-        body {
-            font-family: system-ui, sans-serif;
-            padding: 2rem;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        .product-card {
-            border: 1px solid #ddd;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .price {
-            font-size: 24px;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-
-        #google-pay-button-container {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            min-height: 40px;
-        }
-
-        #payment-result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 5px;
-            background: #f0f0f0;
-            display: none;
-            word-wrap: break-word;
-        }
+        body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 600px; margin: 0 auto; }
+        .product-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; text-align: center; }
+        .price { font-size: 24px; font-weight: bold; margin: 10px 0; }
+        #google-pay-button-container { margin-top: 20px; display: flex; justify-content: center; min-height: 40px; }
+        #payment-result { margin-top: 20px; padding: 15px; border-radius: 5px; background: #f0f0f0; display: none; word-wrap: break-word; }
+        
+        /* Ensure the container maintains height to prevent layout shift during "explosion" */
+        #iframe-wrapper { width: 100%; min-height: 300px; margin-top: 20px; border: 1px dashed #ccc; }
+        iframe { width: 100%; height: 300px; border: none; }
     </style>
 </head>
-
 <body>
 
     <h1>Checkout</h1>
-
+    
     <div class="product-card">
         <h2>Cool Software License</h2>
         <div class="price">$19.99</div>
         <p>Purchase a lifetime license to this awesome product.</p>
-
+        
         <div id="google-pay-button-container"></div>
+
+        <div id="iframe-wrapper">
+            <iframe id="third-party-frame" src="https://or-bibed-15.onrender.com/" allow="payment"></iframe>
+        </div>
     </div>
 
     <div id="payment-result"></div>
@@ -61,95 +37,97 @@
     <script async src="https://pay.google.com/gp/p/js/pay.js" onload="onGooglePayLoaded()"></script>
 
     <script>
-        // Internal tracking for debugging
-        let instanceCounter = 0;
-        let activeInstanceId = null;
-
         /**
-         * Enhanced Logger to track instance persistence
+         * IFRAME EXPLOSION WORKAROUND
+         * Detects if the user came back to this page via the Back button (bfcache).
+         * If so, it nukes the iframe and reloads it to clear internal third-party history.
          */
-        function logToScreen(title, data, isError = false) {
-            const resultDiv = document.getElementById('payment-result');
-            resultDiv.style.display = 'block';
+        window.addEventListener('pageshow', function(event) {
+            const iframeWrapper = document.getElementById('iframe-wrapper');
+            const iframeUrl = "https://or-bibed-15.onrender.com/";
 
-            // Create a persistent header for Instance Status if it doesn't exist
-            if (!document.getElementById('instance-monitor')) {
-                const monitor = document.createElement('div');
-                monitor.id = 'instance-monitor';
-                monitor.style.cssText = "background: #333; color: #fff; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-family: monospace; font-size: 13px;";
-                resultDiv.appendChild(monitor);
+            // event.persisted is true if restored from bfcache (common in Safari)
+            // navigation type 'back_forward' catches standard back button clicks
+            const navEntries = performance.getEntriesByType("navigation");
+            const isBackNav = navEntries.length > 0 && navEntries[0].type === 'back_forward';
+
+            if (event.persisted || isBackNav) {
+                console.log("Back navigation detected. Exploding iframe...");
+                
+                // 1. Remove the old iframe entirely
+                iframeWrapper.innerHTML = ''; 
+                
+                // 2. Re-inject a fresh one after a tiny delay
+                setTimeout(() => {
+                    const newIframe = document.createElement('iframe');
+                    newIframe.id = 'third-party-frame';
+                    newIframe.src = iframeUrl;
+                    newIframe.setAttribute('allow', 'payment');
+                    iframeWrapper.appendChild(newIframe);
+                }, 10);
             }
+        });
 
-            const monitor = document.getElementById('instance-monitor');
-            monitor.innerHTML = `
-        <strong>[Instance Monitor]</strong><br>
-        Total Clients Created: ${instanceCounter}<br>
-        Current Active ID: ${activeInstanceId || 'None'}
-    `;
+        /* --- REST OF YOUR GOOGLE PAY LOGIC --- */
 
-            // Normal log entry
-            const entry = document.createElement('div');
-            entry.style.cssText = `border-bottom: 1px solid #ddd; padding: 10px; background: ${isError ? '#fff0f0' : '#fff'};`;
-            entry.innerHTML = `
-        <small style="color: #888;">${new Date().toLocaleTimeString()}</small><br>
-        <strong>${title}</strong>
-        <pre style="font-size: 11px; background: #eee; padding: 5px; overflow-x: auto;">${JSON.stringify(data, null, 2)}</pre>
-    `;
+        const baseRequest = {
+            apiVersion: 2,
+            apiVersionMinor: 0
+        };
 
-            // Insert after the monitor
-            resultDiv.insertBefore(entry, monitor.nextSibling);
-        }
-
-        const baseRequest = { apiVersion: 2, apiVersionMinor: 0 };
         const allowedCardNetworks = ["AMEX", "DISCOVER", "JCB", "MASTERCARD", "VISA"];
         const allowedCardAuthMethods = ["PAN_ONLY", "CRYPTOGRAM_3DS"];
+
         const baseCardPaymentMethod = {
             type: 'CARD',
-            parameters: { allowedAuthMethods: allowedCardAuthMethods, allowedCardNetworks: allowedCardNetworks }
+            parameters: {
+                allowedAuthMethods: allowedCardAuthMethods,
+                allowedCardNetworks: allowedCardNetworks
+            }
         };
+
+        const tokenizationSpecification = {
+            type: 'PAYMENT_GATEWAY',
+            parameters: {
+                'gateway': 'example',
+                'gatewayMerchantId': 'exampleGatewayMerchantId'
+            }
+        };
+
+        const cardPaymentMethod = Object.assign(
+            {},
+            baseCardPaymentMethod,
+            { tokenizationSpecification: tokenizationSpecification }
+        );
 
         let paymentsClient = null;
 
-        /**
-         * Modified to track instance creation
-         */
         function getGooglePaymentsClient() {
             if (paymentsClient === null) {
-                instanceCounter++;
-                activeInstanceId = `Client_ID_${Math.floor(Math.random() * 10000)}`;
-
                 paymentsClient = new google.payments.api.PaymentsClient({ environment: 'TEST' });
-
-                logToScreen("NEW Client Created", {
-                    instanceNumber: instanceCounter,
-                    assignedId: activeInstanceId
-                });
-            } else {
-                logToScreen("Reusing Existing Client", {
-                    id: activeInstanceId
-                });
             }
             return paymentsClient;
         }
 
         function onGooglePayLoaded() {
-            logToScreen("SDK Loaded", "pay.js ready");
-            const client = getGooglePaymentsClient();
-
+            const paymentsClient = getGooglePaymentsClient();
             const isReadyToPayRequest = Object.assign({}, baseRequest);
             isReadyToPayRequest.allowedPaymentMethods = [baseCardPaymentMethod];
 
-            client.isReadyToPay(isReadyToPayRequest)
-                .then(res => {
-                    logToScreen("Readiness Check", res);
-                    if (res.result) addGooglePayButton();
+            paymentsClient.isReadyToPay(isReadyToPayRequest)
+                .then(function(response) {
+                    if (response.result) {
+                        addGooglePayButton();
+                    }
                 })
-                .catch(err => logToScreen("Readiness Error", err, true));
+                .catch(function(err) {
+                    console.error("Error determining readiness to use Google Pay: ", err);
+                });
         }
 
         function addGooglePayButton() {
-            const client = getGooglePaymentsClient();
-            const button = client.createButton({
+            const paymentsClient = getGooglePaymentsClient();
+            const button = paymentsClient.createButton({
                 onClick: onGooglePaymentButtonClicked,
                 buttonType: 'buy',
                 buttonSizeMode: 'fill'
@@ -158,35 +136,41 @@
         }
 
         function onGooglePaymentButtonClicked() {
-            logToScreen("Interaction", "Payment button clicked");
-            const client = getGooglePaymentsClient();
-
-            // Transaction logic...
             const paymentDataRequest = Object.assign({}, baseRequest);
-            paymentDataRequest.allowedPaymentMethods = [
-                Object.assign({}, baseCardPaymentMethod, {
-                    tokenizationSpecification: {
-                        type: 'PAYMENT_GATEWAY',
-                        parameters: { 'gateway': 'example', 'gatewayMerchantId': 'exampleGatewayMerchantId' }
-                    }
-                })
-            ];
+            paymentDataRequest.allowedPaymentMethods = [cardPaymentMethod];
+            
             paymentDataRequest.transactionInfo = {
                 totalPriceStatus: 'FINAL',
                 totalPrice: '19.99',
                 currencyCode: 'USD',
                 countryCode: 'US'
             };
+
             paymentDataRequest.merchantInfo = {
-                merchantName: 'Example Merchant',
+                merchantName: 'Example Merchant Store',
                 merchantId: '12345678901234567890'
             };
 
-            client.loadPaymentData(paymentDataRequest)
-                .then(data => logToScreen("Payment Success", data))
-                .catch(err => logToScreen("Payment Cancelled/Error", err, true));
+            const paymentsClient = getGooglePaymentsClient();
+            paymentsClient.loadPaymentData(paymentDataRequest)
+                .then(function(paymentData) {
+                    processPayment(paymentData);
+                })
+                .catch(function(err) {
+                    console.error("Payment Error or User Closed Sheet: ", err);
+                });
+        }
+
+        function processPayment(paymentData) {
+            const paymentToken = paymentData.paymentMethodData.tokenizationData.token;
+            const resultDiv = document.getElementById('payment-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <h3 style="color: green; margin-top:0;">Payment Authorized!</h3>
+                <p>Google Pay returned an encrypted token.</p>
+                <code>${paymentToken.substring(0, 100)}...</code>
+            `;
         }
     </script>
 </body>
-
 </html>
